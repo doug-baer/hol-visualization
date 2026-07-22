@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import yaml
 
-# Room capacity/scale multipliers
+# Room capacity/scale multipliers (number of seats per room)
 ROOM_MULTIPLIERS = {"Room1": 32, "Room2": 40, "Room3": 40}
 
 
@@ -42,8 +42,8 @@ def parse_time_to_minutes(time_str):
 
 def process_environment_load(blocks_df, schedule_df, multipliers):
     """Aggregate hourly metrics scaled by room multipliers."""
-    # Extended tracking hours from 06:00 to 17:00 to accommodate early startup times
-    hours = [f"{h:02d}:00" for h in range(6, 18)]
+    # Extend tracking hours from 06:00 to 18:00 to accommodate early startup times (normal start is 09:00)
+    hours = [f"{h:02d}:00" for h in range(6, 19)]
     dimensions = ["NumVMs", "NumCPU", "TbRAM", "TbDisk"]
 
     # Initialize hourly aggregate counts
@@ -54,12 +54,12 @@ def process_environment_load(blocks_df, schedule_df, multipliers):
     # Process schedule
     for _, row in schedule_df.iterrows():
         room = str(row["Room"]).strip()
-        block_name = str(row["BlockName"]).strip()
+        block_name = str(row["PodName"]).strip()
         time_slot = str(row["TimeSlot"]).strip()
 
         if block_name not in blocks_df.index:
             print(
-                f"Warning: Block '{block_name}' in schedule not found in YAML block definitions."
+                f"Warning: Pod '{block_name}' in schedule not found in YAML block definitions."
             )
             continue
 
@@ -109,12 +109,15 @@ def plot_load(load_df):
             alpha=0.85,
         )
         ax.set_title(
-            f"Weighted Load: {dim}", fontsize=12, fontweight="bold"
+            f"Aggregate Load: {dim}", fontsize=12, fontweight="bold"
         )
-        ax.set_ylabel("Total Scaled Units")
+        ax.set_ylabel("Total Units")
         ax.grid(axis="y", linestyle="--", alpha=0.5)
+        ax.tick_params(axis='x',labelrotation=45)
+        # add some extra room so that the labels don't crowd the top of the plot
+        ax.margins(y=0.1)
 
-        # Annotate non-zero values on top of bars
+        # annotate non-zero values above each bar
         for x, y in zip(load_df.index, load_df[dim]):
             if y > 0:
                 ax.text(
@@ -123,37 +126,34 @@ def plot_load(load_df):
                     f"{y:g}",
                     ha="center",
                     va="bottom",
-                    fontsize=8.5,
+                    fontsize=8,
                 )
 
     plt.suptitle(
-        "Hourly Scaled Environment Utilization (Applying Room Multipliers & Startup Times)",
+        "Hourly Environment Utilization (Applying Room Sizes & Startup Times)",
         fontsize=14,
         fontweight="bold",
     )
-    plt.xticks(rotation=45)
     plt.tight_layout()
     plt.show()
 
 
 if __name__ == "__main__":
-    # Command-line argument parser with sensible default filenames
     parser = argparse.ArgumentParser(
-        description="Visualize hourly environment utilization load from YAML and CSV files."
+        description="Visualize hourly environment utilization for Workshops using HOL vPods."
     )
     parser.add_argument(
         "--pods",
         default="pods.yaml",
-        help="Path to YAML file with block definitions (default: pods.yaml)",
+        help="Path to YAML file with pod definitions (default: pods.yaml)",
     )
     parser.add_argument(
         "--schedule",
-        default="schedule_day1.csv",
-        help="Path to CSV file with room schedule (default: schedule_day1.csv)",
+        default="schedule.csv",
+        help="Path to CSV file with room schedule (default: schedule.csv)",
     )
     args = parser.parse_args()
 
-    # Load data, process, and plot
     pods_df, schedule_df = load_data(args.pods, args.schedule)
     load_df = process_environment_load(
         pods_df, schedule_df, ROOM_MULTIPLIERS
