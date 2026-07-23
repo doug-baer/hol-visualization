@@ -11,7 +11,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["--pods", "./data/pods.yaml", "--schedule", "./data/schedule_day1.csv"]
+            "args": ["--pods", "./data/pods.yaml", "--schedule", "./data/schedule.csv"]
         }
     ]
 }
