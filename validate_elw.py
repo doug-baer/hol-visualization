@@ -65,7 +65,7 @@ def parse_time_to_minutes(time_str):
     return h * 60 + m
 
 
-def process_environment_load(blocks_df, schedule_df, multipliers):
+def process_environment_load(blocks_df, schedule_df):
     """Aggregate hourly metrics scaled by room multipliers."""
     # Extend tracking hours from 06:00 to 19:00 to accommodate early startup times (normal start is 09:00)
     hours = [f"{h:02d}:00" for h in range(6, 20)]
@@ -76,11 +76,27 @@ def process_environment_load(blocks_df, schedule_df, multipliers):
         hour: {dim: 0.0 for dim in dimensions} for hour in hours[:-1]
     }
 
-    # Process schedule
+    # Process schedule using DEPLOYMENT_POOL for the vPod lookup and ROOM_SIZE for the multiplier
+    # TODO: process the DEPLOYMENT_POOL -- if it ends with "-vmworld" ... remove that to get PodName (if no valid pool, skip it)
     for _, row in schedule_df.iterrows():
-        room = str(row["Room"]).strip()
-        block_name = str(row["PodName"]).strip()
-        time_slot = str(row["TimeSlot"]).strip()
+        # room = str(row["ROOM"]).strip()
+        pool_name = str(row["DEPLOYMENT_POOL"]).strip()
+        
+        # Ensure the deployment pool ends with '-vmworld', otherwise skip
+        if not pool_name.endswith("-vmworld"):
+            continue
+            
+        # Strip '-vmworld' to get the matching block name (e.g., 'HOL-2637-vmworld' -> 'HOL-2637')
+        block_name = pool_name.removesuffix("-vmworld")
+
+        start_str = str(row["START"]).strip()
+        end_str = str(row["END"]).strip()
+        
+        # Use the ROOM_SIZE column as the multiplier (number of seats)
+        try:
+            multiplier = float(row["ROOM_SIZE"])
+        except ValueError:
+            multiplier = 1.0  # Fallback if ROOM_SIZE is not a number
 
         if block_name not in blocks_df.index:
             print(
@@ -88,11 +104,8 @@ def process_environment_load(blocks_df, schedule_df, multipliers):
             )
             continue
 
-        multiplier = multipliers.get(room, 1.0)
         block_metrics = blocks_df.loc[block_name]
         startup_minutes = int(block_metrics.get("StartupTime", 0))
-
-        start_str, end_str = time_slot.split("-")
         
         # Calculate active start time including startup offset
         scheduled_start_min = parse_time_to_minutes(start_str)
@@ -116,7 +129,7 @@ def process_environment_load(blocks_df, schedule_df, multipliers):
     return load_df
 
 
-def plot_load(load_df):
+def plot_load(load_df, selected_date):
     """Visualize hourly utilization in a 2x2 multi-panel bar plot."""
     dimensions = ["NumVMs", "NumCPU", "TbRAM", "TbDisk"]
     fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharex=True)
@@ -155,7 +168,7 @@ def plot_load(load_df):
                 )
 
     plt.suptitle(
-        "Hourly Environment Utilization (Applying Room Sizes & Startup Times)",
+        f"Hourly Utilization ({selected_date})",
         fontsize=14,
         fontweight="bold",
     )
@@ -163,6 +176,33 @@ def plot_load(load_df):
     plt.savefig('schedule.png', dpi=150, bbox_inches='tight')
     print("Chart saved as 'schedule.png'")
     plt.show()
+
+def get_user_date_selection(schedule_df):
+    """Prompt the user to select a date from the available dates in the schedule."""
+    if "DAY" not in schedule_df.columns:
+        print("Error: 'DAY' column not found in the CSV schedule.")
+        sys.exit(1)
+
+    unique_dates = sorted(schedule_df["DAY"].dropna().unique())
+    
+    if not unique_dates:
+        print("Error: No valid dates found in the 'DAY' column.")
+        sys.exit(1)
+
+    print("\nAvailable dates in the schedule:")
+    for idx, date_val in enumerate(unique_dates, start=1):
+        print(f"  {idx}. {date_val}")
+
+    while True:
+        try:
+            choice = input("\nEnter the number of the date you want to analyze: ")
+            choice_idx = int(choice)
+            if 1 <= choice_idx <= len(unique_dates):
+                return unique_dates[choice_idx - 1]
+            else:
+                print(f"Please enter a number between 1 and {len(unique_dates)}.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
 
 
 if __name__ == "__main__":
@@ -179,14 +219,31 @@ if __name__ == "__main__":
         default="schedule.csv",
         help="Path to CSV file with room schedule (default: schedule.csv)",
     )
+    parser.add_argument(
+        "--day",
+        help="Bypass prompt and analyze a specific DAY directly (e.g., --day 08/25/2025)",
+    )
+
     args = parser.parse_args()
 
     pods_df, schedule_df = load_data(args.pods, args.schedule)
-    load_df = process_environment_load(
-        pods_df, schedule_df, ROOM_MULTIPLIERS
-    )
+
+    # Determine which day to analyze
+    if args.day:
+        if args.day not in schedule_df["DAY"].values:
+            print(f"Error: The date '{args.day}' does not exist in the CSV file.")
+            sys.exit(1)
+        selected_day = args.day
+    else:
+        selected_day = get_user_date_selection(schedule_df)
+
+    # Filter schedule for the selected day
+    filtered_schedule_df = schedule_df[schedule_df["DAY"] == selected_day]
+
+    # Process and plot (removed the old hardcoded ROOM_MULTIPLIERS)
+    load_df = process_environment_load(pods_df, filtered_schedule_df)
 
     print("--- Scaled Hourly Utilization ---")
     print(load_df)
 
-    plot_load(load_df)
+    plot_load(load_df, selected_day)
