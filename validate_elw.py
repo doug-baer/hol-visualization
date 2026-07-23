@@ -160,6 +160,8 @@ def plot_load(load_df):
         fontweight="bold",
     )
     plt.tight_layout()
+    plt.savefig('schedule.png', dpi=150, bbox_inches='tight')
+    print("Chart saved as 'schedule.png'")
     plt.show()
 
 
