@@ -5,6 +5,31 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import yaml
 
+# EXAMPLE USE: validate_elw.py --pods pods.yaml --schedule schedule.csv 
+
+### Pods YAML Example
+# pods:
+#  - Name: HOL-2001
+#    NumVMs: 11
+#    NumCPU: 163
+#    TbRAM: 0.997
+#    TbDisk: 7.68
+#    StartupTime: 29
+#   - Name: HOL-2002
+#     NumVMs: 11
+#     NumCPU: 163
+#     TbRAM: 0.997
+#     TbDisk: 10.42
+#     StartupTime: 43
+
+### Schedule CSV Example
+#Room,TimeSlot,PodName
+#Room1,09:00-11:00,HOL-2001
+#Room1,11:00-13:00,HOL-2002
+#Room1,13:00-15:00,HOL-2001
+#Room1,15:00-17:00,HOL-2002
+
+
 # Room capacity/scale multipliers (number of seats per room)
 ROOM_MULTIPLIERS = {"Room1": 32, "Room2": 40, "Room3": 40}
 
@@ -42,8 +67,8 @@ def parse_time_to_minutes(time_str):
 
 def process_environment_load(blocks_df, schedule_df, multipliers):
     """Aggregate hourly metrics scaled by room multipliers."""
-    # Extend tracking hours from 06:00 to 18:00 to accommodate early startup times (normal start is 09:00)
-    hours = [f"{h:02d}:00" for h in range(6, 19)]
+    # Extend tracking hours from 06:00 to 19:00 to accommodate early startup times (normal start is 09:00)
+    hours = [f"{h:02d}:00" for h in range(6, 20)]
     dimensions = ["NumVMs", "NumCPU", "TbRAM", "TbDisk"]
 
     # Initialize hourly aggregate counts
